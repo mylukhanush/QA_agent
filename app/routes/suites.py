@@ -280,3 +280,26 @@ def remove_test_case_from_suite(suite_id, tc_id):
         return jsonify({"status": "removed", "suite_id": suite_id, "test_case_id": tc_id})
 
     return jsonify({"error": "Test case not found in suite"}), 404
+
+
+@suites_bp.route("/api/test-cases/<tc_id>", methods=["DELETE"])
+def delete_test_case(tc_id):
+    """Delete a test case and all of its dependent runs if none are actively running."""
+    from app.routes.runner import _delete_run_record, _is_run_actively_running
+
+    test_case = TestCase.query.get_or_404(tc_id)
+    runs = list(test_case.test_runs)
+
+    for run in runs:
+        if _is_run_actively_running(run):
+            return jsonify({"error": "Cannot delete a test case while one of its runs is still active"}), 400
+
+    for suite in list(test_case.suites):
+        suite.test_cases.remove(test_case)
+
+    for run in runs:
+        _delete_run_record(run)
+
+    db.session.delete(test_case)
+    db.session.commit()
+    return jsonify({"status": "deleted", "id": str(test_case.id)})

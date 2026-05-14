@@ -162,8 +162,8 @@
 <div class="mb-8">
     <div class="flex items-center justify-between">
         <div>
-            <h1 class="text-2xl font-bold text-white">Test Suites & History</h1>
-            <p class="text-sm text-gray-400 mt-1">Organize and execute groups of test cases</p>
+            <h1 class="text-2xl font-bold text-white">Test Cases & Suites</h1>
+            <p class="text-sm text-gray-400 mt-1">Manage unassigned test cases and organize them into suites</p>
         </div>
     </div>
 
@@ -437,7 +437,7 @@
             </tbody>
         </table>
     </div>
-</div>
+    </div>
 
 {% endblock %}
 
@@ -453,8 +453,11 @@
             el.classList.remove('border-brand-500', 'text-white');
             el.classList.add('border-transparent', 'text-gray-500');
         });
-        document.getElementById('tab-' + tabId).classList.remove('border-transparent', 'text-gray-500');
-        document.getElementById('tab-' + tabId).classList.add('border-brand-500', 'text-white');
+        const activeTab = document.getElementById('tab-' + tabId);
+        if (activeTab) {
+            activeTab.classList.remove('border-transparent', 'text-gray-500');
+            activeTab.classList.add('border-brand-500', 'text-white');
+        }
 
         // Show/Hide content
         document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));

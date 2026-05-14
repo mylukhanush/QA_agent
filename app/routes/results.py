@@ -6,7 +6,7 @@ import os
 from flask import Blueprint, abort, current_app, render_template, request, send_from_directory, url_for
 
 from db import db
-from db.models import Site, TestRun, RunStep, ValueCapture
+from db.models import Site, TestRun, RunStep, ValueCapture, TestCase, TestSuite
 from app.routes.runner import _is_run_actively_running
 
 results_bp = Blueprint("results", __name__)
@@ -79,7 +79,6 @@ def runs_list():
         run.is_stale_running = run.status == "running" and not _is_run_actively_running(run)
 
     sites = Site.query.filter_by(is_active=True).all()
-
     return render_template(
         "runs.html",
         suites=suites,
@@ -88,6 +87,23 @@ def runs_list():
         sites=sites,
         site_filter=site_filter,
         status_filter=status_filter
+    )
+
+
+@results_bp.route("/test-cases")
+def test_cases_list():
+    """List test cases that are not assigned to any suite."""
+    unassigned_test_cases = (
+        TestCase.query
+        .filter(~TestCase.suites.any())
+        .order_by(TestCase.created_at.desc())
+        .all()
+    )
+    suites = TestSuite.query.order_by(TestSuite.name).all()
+    return render_template(
+        "test_cases.html",
+        test_cases=unassigned_test_cases,
+        suites=suites,
     )
 
 
