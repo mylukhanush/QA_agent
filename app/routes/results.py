@@ -39,11 +39,36 @@ def runs_list():
     
     # Fetch recent suite runs
     suite_runs = SuiteRun.query.order_by(SuiteRun.started_at.desc()).limit(50).all()
+    suite_run_updates = False
+    for sr in suite_runs:
+        child_runs = sr.test_runs.all()
+        if not child_runs:
+            sr.ui_status = sr.status
+            continue
+
+        has_running = any((r.status or "").lower() == "running" for r in child_runs)
+        sr.ui_status = "running" if has_running else "completed"
+        if not has_running and (sr.status or "").lower() == "running":
+            # Mark suite run completed when all child runs are terminal.
+            sr.status = "completed"
+            finished_candidates = [r.finished_at for r in child_runs if r.finished_at]
+            if finished_candidates:
+                sr.finished_at = max(finished_candidates)
+            if sr.started_at and sr.finished_at:
+                sr.duration_ms = int((sr.finished_at - sr.started_at).total_seconds() * 1000)
+            suite_run_updates = True
+
+    if suite_run_updates:
+        db.session.commit()
     
     # Individual runs (legacy/backup view)
     site_filter = request.args.get("site")
     status_filter = request.args.get("status")
-    query = TestRun.query.order_by(TestRun.started_at.desc())
+    query = (
+        TestRun.query
+        .filter(TestRun.suite_run_id.is_(None))  # Show only individually-triggered runs
+        .order_by(TestRun.started_at.desc())
+    )
     if site_filter:
         site = Site.query.filter_by(name=site_filter).first()
         if site: query = query.filter_by(site_id=site.id)
