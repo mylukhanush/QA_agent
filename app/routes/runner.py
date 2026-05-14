@@ -17,6 +17,29 @@ _active_runs = {}
 RUNNING_DELETE_GRACE_PERIOD = timedelta(hours=2)
 
 
+def _upsert_generated_test_case(existing_test_case_id, situation, test_plan):
+    """Create or refresh a generated test case before it is executed."""
+    test_case = None
+    if existing_test_case_id:
+        test_case = TestCase.query.get(existing_test_case_id)
+
+    if test_case is None:
+        test_case = TestCase()
+        db.session.add(test_case)
+
+    test_case.situation_description = situation or test_plan.get("description", "")
+    test_case.user_prompt = situation or None
+    test_case.category = test_plan.get("category", "data_presence")
+    test_case.steps = test_plan.get("steps", [])
+    test_case.test_plan = test_plan
+
+    if not test_case.name:
+        test_case.name = test_plan.get("testName") or test_plan.get("description")
+
+    db.session.flush()
+    return test_case
+
+
 def _is_run_actively_running(run):
     """Return True only for runs that are likely still executing right now."""
     if run.status != "running":
@@ -177,6 +200,7 @@ def api_generate():
     data = request.json
     situation = data.get("situation", "")
     target_sites = data.get("sites", ["jhs82"])
+    existing_test_case_id = data.get("test_case_id")
 
     if not situation:
         return jsonify({"error": "Situation description is required"}), 400
@@ -184,8 +208,15 @@ def api_generate():
     try:
         from ai.generator import generate_test_plan
         plan = generate_test_plan(situation, target_sites)
-        return jsonify(plan)
+        test_case = _upsert_generated_test_case(existing_test_case_id, situation, plan)
+        db.session.commit()
+
+        payload = dict(plan)
+        payload["test_case_id"] = str(test_case.id)
+        payload["test_case_name"] = test_case.name
+        return jsonify(payload)
     except Exception as exc:
+        db.session.rollback()
         return jsonify({"error": str(exc)}), 500
 
 
@@ -196,20 +227,12 @@ def api_run():
     test_plan = data.get("test_plan")
     situation = (data.get("situation") or "").strip()
     target_sites = data.get("sites", [])
+    existing_test_case_id = data.get("test_case_id")
 
     if not test_plan or not target_sites:
         return jsonify({"error": "test_plan and sites are required"}), 400
 
-    # Persist the test case
-    tc = TestCase(
-        situation_description=situation or test_plan.get("description", ""),
-        user_prompt=situation or None,
-        category=test_plan.get("category", "data_presence"),
-        steps=test_plan.get("steps", []),
-        test_plan=test_plan,
-    )
-    db.session.add(tc)
-    db.session.flush()
+    tc = _upsert_generated_test_case(existing_test_case_id, situation, test_plan)
 
     run_ids = {}
     for site_name in target_sites:

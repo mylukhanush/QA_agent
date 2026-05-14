@@ -133,20 +133,24 @@ def delete_suite(suite_id):
 @suites_bp.route("/api/test-cases/<tc_id>/save-to-suite", methods=["POST"])
 def save_to_suite(tc_id):
     data = request.json
-    tc_name = data.get("name")
+    tc_name = (data.get("name") or "").strip()
     suite_id = data.get("suite_id")
-    new_suite_name = data.get("new_suite_name")
+    new_suite_name = (data.get("new_suite_name") or "").strip()
 
     test_case = TestCase.query.get_or_404(tc_id)
     if tc_name:
         test_case.name = tc_name
 
     if new_suite_name:
-        suite = TestSuite(name=new_suite_name)
-        db.session.add(suite)
-        db.session.flush()
+        suite = TestSuite.query.filter_by(name=new_suite_name).first()
+        if suite is None:
+            suite = TestSuite(name=new_suite_name)
+            db.session.add(suite)
+            db.session.flush()
     elif suite_id:
         suite = TestSuite.query.get(suite_id)
+        if suite is None:
+            return jsonify({"error": "Selected suite was not found"}), 404
     else:
         db.session.commit()
         return jsonify({"status": "updated", "id": str(test_case.id)})

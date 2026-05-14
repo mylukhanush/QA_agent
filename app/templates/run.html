@@ -177,6 +177,32 @@ let currentRunIds = null;
 let pollInterval = null;
 let lastSteps = [];
 
+function getSuggestedTestCaseName(plan) {
+    if (!plan) return '';
+    return plan.test_case_name || plan.testName || plan.description || '';
+}
+
+function normalizeGeneratedPlanPayload(payload) {
+    if (!payload) return { plan: null, testCaseId: null, testCaseName: '' };
+    const { test_case_id, test_case_name, ...plan } = payload;
+    return {
+        plan,
+        testCaseId: test_case_id || null,
+        testCaseName: test_case_name || ''
+    };
+}
+
+function showSavePanel(defaultName = '') {
+    const panel = document.getElementById('save-suite-panel');
+    const nameInput = document.getElementById('save-tc-name');
+
+    panel.classList.remove('hidden');
+    if (!nameInput.value.trim() && defaultName) {
+        nameInput.value = defaultName;
+    }
+    loadSuites();
+}
+
 function saveState() {
     const state = {
         situation: document.getElementById('situation-input').value,
@@ -212,6 +238,9 @@ async function restoreState() {
             document.getElementById('plan-json').textContent = JSON.stringify(currentPlan, null, 2);
             document.getElementById('plan-preview').classList.remove('hidden');
             document.getElementById('btn-run').disabled = false;
+            if (currentTestCaseId) {
+                showSavePanel(getSuggestedTestCaseName(currentPlan));
+            }
         }
 
         if (lastSteps.length > 0) {
@@ -263,6 +292,7 @@ async function loadTestCaseById(tcId) {
         document.getElementById('plan-json').textContent = JSON.stringify(currentPlan, null, 2);
         document.getElementById('plan-preview').classList.remove('hidden');
         document.getElementById('btn-run').disabled = false;
+        showSavePanel(data.name || getSuggestedTestCaseName(currentPlan));
         
         // Auto-focus the description for clarity
         document.getElementById('situation-input').focus();
@@ -330,7 +360,7 @@ async function generatePlan() {
         const resp = await fetch('/api/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ situation, sites }),
+            body: JSON.stringify({ situation, sites, test_case_id: currentTestCaseId }),
         });
 
         const data = await resp.json();
@@ -340,10 +370,13 @@ async function generatePlan() {
             return;
         }
 
-        currentPlan = data;
-        document.getElementById('plan-json').textContent = JSON.stringify(data, null, 2);
+        const generated = normalizeGeneratedPlanPayload(data);
+        currentPlan = generated.plan;
+        currentTestCaseId = generated.testCaseId;
+        document.getElementById('plan-json').textContent = JSON.stringify(currentPlan, null, 2);
         document.getElementById('plan-preview').classList.remove('hidden');
         document.getElementById('btn-run').disabled = false;
+        showSavePanel(generated.testCaseName || getSuggestedTestCaseName(currentPlan));
         saveState();
 
     } catch (err) {
@@ -368,7 +401,7 @@ async function runTest() {
         const resp = await fetch('/api/run', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ situation, test_plan: currentPlan, sites }),
+            body: JSON.stringify({ situation, test_plan: currentPlan, sites, test_case_id: currentTestCaseId }),
         });
 
         const data = await resp.json();
@@ -390,8 +423,7 @@ async function runTest() {
         });
 
         // Show save panel
-        document.getElementById('save-suite-panel').classList.remove('hidden');
-        loadSuites();
+        showSavePanel(getSuggestedTestCaseName(currentPlan));
 
         // Start polling for each run
         const firstRunId = Object.values(currentRunIds)[0];
