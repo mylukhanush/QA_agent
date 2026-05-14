@@ -1,0 +1,528 @@
+{% extends "base.html" %}
+{% block title %}Run Test{% endblock %}
+
+{% block content %}
+<!-- Top right New Chat button -->
+<div class="fixed top-6 right-8 z-50">
+    <a href="javascript:void(0)" onclick="clearState()" class="flex items-center gap-2 bg-surface-800 border border-white/10 hover:border-brand-500/50 hover:bg-white/[.02] text-gray-300 hover:text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-lg group">
+        <svg class="w-4 h-4 group-hover:rotate-90 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+        </svg>
+        New Chat
+    </a>
+</div>
+
+
+<div id="chat-wrapper" class="max-w-4xl mx-auto flex flex-col transition-all duration-700 ease-in-out pt-[25vh]">
+    
+    <!-- Output Area (Appears above input) -->
+    <div id="chat-output" class="hidden flex-1 space-y-6 mb-10 fade-in">
+        <!-- Generated Plan Preview -->
+        <div id="plan-preview" class="bg-surface-800 border border-white/5 rounded-2xl overflow-hidden hidden shadow-xl">
+            <button onclick="togglePlanCollapse()" class="w-full px-6 py-4 flex items-center justify-between border-b border-white/5 hover:bg-white/[.02] transition-colors">
+                <span class="text-sm font-semibold text-white flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-lg bg-brand-500/10 flex items-center justify-center">
+                        <svg class="w-4 h-4 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                        </svg>
+                    </div>
+                    Generated Test Plan
+                </span>
+                <svg id="plan-chevron" class="w-4 h-4 text-gray-500 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+            </button>
+            <div id="plan-body" class="px-6 py-5">
+                <pre id="plan-json" class="text-xs text-gray-400 bg-surface-900 rounded-xl p-4 overflow-auto max-h-96 font-mono"></pre>
+            </div>
+        </div>
+
+        <!-- Live Output -->
+        <div id="live-output" class="bg-surface-800 border border-white/5 rounded-2xl overflow-hidden hidden shadow-xl">
+            <div class="px-6 py-4 border-b border-white/5 flex items-center justify-between">
+                <span class="text-sm font-semibold text-white flex items-center gap-3">
+                    <div id="live-spinner" class="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></div>
+                    Live Execution
+                </span>
+                <span id="live-status" class="text-xs text-gray-500 font-medium">Running...</span>
+            </div>
+            <div id="live-steps" class="px-6 py-5 space-y-3 max-h-[500px] overflow-y-auto custom-scrollbar">
+                <!-- Steps will be injected here -->
+            </div>
+        </div>
+
+        <!-- Loading state -->
+        <div id="loading-state" class="hidden">
+            <div class="bg-surface-800 border border-white/5 rounded-2xl p-12 flex flex-col items-center justify-center shadow-xl">
+                <div class="relative w-12 h-12 mb-4">
+                    <div class="absolute inset-0 border-2 border-brand-500/10 rounded-full"></div>
+                    <div class="absolute inset-0 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+                <p id="loading-message" class="text-sm text-gray-400 font-medium">Generating test plan with AI...</p>
+            </div>
+        </div>
+
+        <!-- Save to Suite Panel -->
+        <div id="save-suite-panel" class="hidden bg-surface-800 border border-brand-500/30 rounded-2xl p-6 shadow-2xl fade-in">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-full bg-brand-500/20 flex items-center justify-center">
+                    <svg class="w-5 h-5 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                    </svg>
+                </div>
+                <div>
+                    <h3 class="text-base font-bold text-white">Save to Test Suite</h3>
+                    <p class="text-xs text-gray-500">Organize this test for future automated runs</p>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="text-[10px] uppercase tracking-wider font-bold text-gray-500 block mb-1.5 ml-1">Test Case Name</label>
+                    <input id="save-tc-name" type="text" class="w-full bg-surface-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-200 focus:outline-none focus:border-brand-500 transition-all" placeholder="e.g. Login Flow Check">
+                </div>
+                <div>
+                    <label class="text-[10px] uppercase tracking-wider font-bold text-gray-500 block mb-1.5 ml-1">Target Suite</label>
+                    <div class="flex gap-2">
+                        <select id="save-suite-id" onchange="toggleNewSuiteInput(this)" class="flex-1 bg-surface-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-200 focus:outline-none focus:border-brand-500 transition-all">
+                            <option value="">+ New Suite</option>
+                        </select>
+                        <input id="save-new-suite-name" type="text" class="flex-1 bg-surface-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-200 focus:outline-none focus:border-brand-500 transition-all" placeholder="New Suite Name">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex justify-end gap-3 mt-6">
+                <button onclick="document.getElementById('save-suite-panel').classList.add('hidden')" class="px-4 py-2 text-gray-500 hover:text-white text-xs font-semibold transition-colors">Dismiss</button>
+                <button onclick="saveTestCase()" class="bg-brand-600 hover:bg-brand-500 text-white px-6 py-2 rounded-xl text-sm font-bold transition-all shadow-lg active:scale-95">Save to Suite</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Input Area (Moves down) -->
+    <div id="chat-input-area" class="w-full">
+        <!-- ChatGPT Style Input Bar -->
+        <div class="relative group">
+            <div class="bg-surface-800 border border-white/10 rounded-3xl p-2 shadow-2xl focus-within:border-brand-500/50 transition-all">
+                <textarea
+                    id="situation-input"
+                    rows="1"
+                    class="w-full bg-transparent border-none rounded-2xl px-5 py-4 text-lg text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-0 resize-none overflow-hidden"
+                    placeholder="Ask anything..."
+                    oninput="this.style.height = ''; this.style.height = this.scrollHeight + 'px'"
+                ></textarea>
+                
+                <div class="flex items-center justify-between px-2 pb-2">
+                    <div class="flex items-center gap-1">
+                        <button class="p-2 text-gray-500 hover:text-gray-300 transition-colors">
+                            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                            </svg>
+                        </button>
+                    </div>
+                    
+                    <div class="flex items-center gap-2">
+                        <button
+                            id="btn-generate"
+                            onclick="generatePlan()"
+                            class="bg-white text-black p-2.5 rounded-full hover:bg-gray-200 transition-all shadow-lg"
+                            title="Generate Test Plan"
+                        >
+                            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                            </svg>
+                        </button>
+                        <button
+                            id="btn-run"
+                            onclick="runTest()"
+                            disabled
+                            class="bg-emerald-600 text-white p-2.5 rounded-full hover:bg-emerald-500 disabled:bg-gray-800 disabled:text-gray-600 transition-all shadow-lg disabled:shadow-none disabled:cursor-not-allowed"
+                            title="Run Test"
+                        >
+                            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Site Chips -->
+        <div id="site-chips" class="flex flex-wrap justify-center gap-2.5 mt-8 transition-all duration-500">
+            <label class="site-chip">
+                <input type="checkbox" id="site-all" class="sr-only" onchange="toggleAllSites(this)">
+                <div class="chip-content">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>All Sites</span>
+                </div>
+            </label>
+            {% for site in sites %}
+            <label class="site-chip" data-site="{{ site.name }}">
+                <input type="checkbox" value="{{ site.name }}" class="sr-only site-cb" checked>
+                <div class="chip-content">
+                    <div class="dot-icon"></div>
+                    <svg class="check-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span>{{ site.name }}</span>
+                </div>
+            </label>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentPlan = null;
+let currentTestCaseId = null;
+let currentRunIds = null;
+let pollInterval = null;
+let lastSteps = [];
+
+function saveState() {
+    const state = {
+        situation: document.getElementById('situation-input').value,
+        currentPlan,
+        currentTestCaseId,
+        currentRunIds,
+        lastSteps,
+        liveStatus: document.getElementById('live-status').textContent,
+        chatVisible: !document.getElementById('chat-output').classList.contains('hidden')
+    };
+    localStorage.setItem('runTestState', JSON.stringify(state));
+}
+
+async function restoreState() {
+    const raw = localStorage.getItem('runTestState');
+    if (!raw) return;
+    
+    try {
+        const state = JSON.parse(raw);
+        if (!state.chatVisible) return;
+
+        document.getElementById('situation-input').value = state.situation || '';
+        currentPlan = state.currentPlan;
+        currentTestCaseId = state.currentTestCaseId;
+        currentRunIds = state.currentRunIds;
+        lastSteps = state.lastSteps || [];
+
+        if (state.chatVisible) {
+            await activateChatLayout();
+        }
+
+        if (currentPlan) {
+            document.getElementById('plan-json').textContent = JSON.stringify(currentPlan, null, 2);
+            document.getElementById('plan-preview').classList.remove('hidden');
+            document.getElementById('btn-run').disabled = false;
+        }
+
+        if (lastSteps.length > 0) {
+            document.getElementById('live-output').classList.remove('hidden');
+            renderLiveSteps(lastSteps);
+            document.getElementById('live-status').textContent = state.liveStatus;
+        }
+
+        if (currentRunIds) {
+            const firstRunId = Object.values(currentRunIds)[0];
+            // If it was running, restart polling
+            if (state.liveStatus === 'Running...') {
+                startPolling(firstRunId);
+            }
+            
+            // Show save panel if not saved yet
+            document.getElementById('save-suite-panel').classList.remove('hidden');
+            loadSuites();
+        }
+    } catch (e) { console.error('Restore failed', e); }
+
+    // Check for tc_id in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const tcId = urlParams.get('tc_id');
+    if (tcId) {
+        loadTestCaseById(tcId);
+    }
+}
+
+async function loadTestCaseById(tcId) {
+    document.getElementById('loading-state').classList.remove('hidden');
+    document.getElementById('loading-message').textContent = 'Loading test case...';
+    
+    try {
+        const resp = await fetch(`/api/test-cases/${tcId}`);
+        const data = await resp.json();
+        
+        if (data.error) {
+            alert('Error loading test case: ' + data.error);
+            return;
+        }
+
+        document.getElementById('situation-input').value = data.situation_description || data.name;
+        currentPlan = data.test_plan;
+        currentTestCaseId = data.id;
+
+        await activateChatLayout();
+        
+        document.getElementById('plan-json').textContent = JSON.stringify(currentPlan, null, 2);
+        document.getElementById('plan-preview').classList.remove('hidden');
+        document.getElementById('btn-run').disabled = false;
+        
+        // Auto-focus the description for clarity
+        document.getElementById('situation-input').focus();
+        
+    } catch (err) {
+        console.error('Failed to load test case:', err);
+    } finally {
+        document.getElementById('loading-state').classList.add('hidden');
+    }
+}
+
+function clearState() {
+    localStorage.removeItem('runTestState');
+    location.href = '/run';
+}
+
+document.addEventListener('DOMContentLoaded', restoreState);
+
+
+function getSelectedSites() {
+    const cbs = document.querySelectorAll('.site-cb:checked');
+    return Array.from(cbs).map(cb => cb.value);
+}
+
+function toggleAllSites(el) {
+    const cbs = document.querySelectorAll('.site-cb');
+    cbs.forEach(cb => { cb.checked = el.checked; cb.dispatchEvent(new Event('change')); });
+}
+
+function togglePlanCollapse() {
+    const body = document.getElementById('plan-body');
+    const chevron = document.getElementById('plan-chevron');
+    body.classList.toggle('hidden');
+    chevron.classList.toggle('rotate-180');
+}
+
+async function activateChatLayout() {
+    const wrapper = document.getElementById('chat-wrapper');
+    const output = document.getElementById('chat-output');
+    const chips = document.getElementById('site-chips');
+    
+    wrapper.classList.remove('pt-[25vh]');
+    wrapper.classList.add('pt-10');
+    output.classList.remove('hidden');
+    chips.classList.add('opacity-0', 'pointer-events-none', '-mt-10');
+    
+    // Allow animation to breathe
+    await new Promise(r => setTimeout(r, 100));
+}
+
+async function generatePlan() {
+    const situation = document.getElementById('situation-input').value.trim();
+    if (!situation) { alert('Please describe the test situation'); return; }
+
+    const sites = getSelectedSites();
+    if (!sites.length) { alert('Select at least one site'); return; }
+
+    await activateChatLayout();
+
+    document.getElementById('loading-state').classList.remove('hidden');
+    document.getElementById('loading-message').textContent = 'Generating test plan with AI...';
+    document.getElementById('btn-generate').disabled = true;
+
+    try {
+        const resp = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ situation, sites }),
+        });
+
+        const data = await resp.json();
+
+        if (data.error) {
+            alert('Error: ' + data.error);
+            return;
+        }
+
+        currentPlan = data;
+        document.getElementById('plan-json').textContent = JSON.stringify(data, null, 2);
+        document.getElementById('plan-preview').classList.remove('hidden');
+        document.getElementById('btn-run').disabled = false;
+        saveState();
+
+    } catch (err) {
+        alert('Generation failed: ' + err.message);
+    } finally {
+        document.getElementById('loading-state').classList.add('hidden');
+        document.getElementById('btn-generate').disabled = false;
+    }
+}
+
+async function runTest() {
+    if (!currentPlan) return;
+
+    const situation = document.getElementById('situation-input').value.trim();
+    const sites = getSelectedSites();
+    document.getElementById('live-output').classList.remove('hidden');
+    document.getElementById('live-steps').innerHTML = '';
+    document.getElementById('live-status').textContent = 'Starting...';
+    document.getElementById('btn-run').disabled = true;
+
+    try {
+        const resp = await fetch('/api/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ situation, test_plan: currentPlan, sites }),
+        });
+
+        const data = await resp.json();
+
+        if (data.error) {
+            alert('Error: ' + data.error);
+            return;
+        }
+
+        currentRunIds = data.run_ids;
+        currentTestCaseId = data.test_case_id;
+
+        // Apply running state to chips
+        document.querySelectorAll('.site-chip').forEach(chip => {
+            const siteName = chip.getAttribute('data-site');
+            if (siteName && currentRunIds[siteName]) {
+                chip.classList.add('is-running');
+            }
+        });
+
+        // Show save panel
+        document.getElementById('save-suite-panel').classList.remove('hidden');
+        loadSuites();
+
+        // Start polling for each run
+        const firstRunId = Object.values(currentRunIds)[0];
+        startPolling(firstRunId);
+
+    } catch (err) {
+        alert('Run failed: ' + err.message);
+    }
+}
+
+function startPolling(runId) {
+    if (pollInterval) clearInterval(pollInterval);
+
+    pollInterval = setInterval(async () => {
+        try {
+            const resp = await fetch(`/api/runs/${runId}/progress`);
+            const data = await resp.json();
+
+            lastSteps = data.steps || [];
+            renderLiveSteps(lastSteps);
+            saveState();
+            document.getElementById('live-status').textContent =
+                data.status === 'running' ? 'Running...' :
+                data.status === 'pass' ? '✓ Passed' :
+                data.status === 'fail' ? '✗ Failed' :
+                data.status;
+
+            if (data.status !== 'running') {
+                clearInterval(pollInterval);
+                
+                // Remove running state from all chips when done
+                document.querySelectorAll('.site-chip').forEach(chip => {
+                    chip.classList.remove('is-running');
+                });
+
+                document.getElementById('live-spinner').classList.remove('animate-pulse');
+                document.getElementById('live-spinner').classList.add(
+                    data.status === 'pass' ? 'bg-emerald-400' : 'bg-red-400'
+                );
+                document.getElementById('btn-run').disabled = false;
+                saveState();
+            }
+        } catch (err) {
+            console.error('Poll error:', err);
+        }
+    }, 1000);
+}
+
+function renderLiveSteps(steps) {
+    const container = document.getElementById('live-steps');
+    container.innerHTML = steps.map(s => {
+        const icon = s.status === 'pass' ? '✓' : s.status === 'fail' ? '✗' : s.status === 'error' ? '⚠' : s.status === 'skipped' ? '⊘' : '⟳';
+        const color = s.status === 'pass' ? 'text-emerald-400' : s.status === 'fail' ? 'text-red-400' : s.status === 'error' ? 'text-yellow-400' : 'text-gray-500';
+        const bg = s.status === 'fail' ? 'bg-red-500/5 border-red-500/10' : 'bg-white/[.02] border-white/5';
+        return `
+            <div class="flex items-start gap-3 ${bg} border rounded-lg px-3 py-2 text-xs">
+                <span class="${color} font-bold text-sm mt-0.5">${icon}</span>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                        <span class="text-gray-400 font-mono">${s.action}</span>
+                        <span class="text-gray-600">·</span>
+                        <span class="text-gray-300 truncate">${s.description || ''}</span>
+                    </div>
+                    ${s.error_message ? `<p class="text-red-400 mt-1 text-[11px]">${s.error_message}</p>` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+    container.scrollTop = container.scrollHeight;
+}
+
+function toggleNewSuiteInput(el) {
+    const input = document.getElementById('save-new-suite-name');
+    input.classList.toggle('hidden', el.value !== "");
+    if (el.value !== "") input.value = "";
+}
+
+async function loadSuites() {
+    try {
+        const resp = await fetch('/api/suites');
+        const suites = await resp.json();
+        const select = document.getElementById('save-suite-id');
+        select.innerHTML = '<option value="">+ New Suite</option>';
+        suites.forEach(s => {
+            select.innerHTML += `<option value="${s.id}">${s.name}</option>`;
+        });
+    } catch (err) { console.error('Failed to load suites:', err); }
+}
+
+async function saveTestCase() {
+    if (!currentTestCaseId) return;
+    
+    const name = document.getElementById('save-tc-name').value.trim();
+    const suiteId = document.getElementById('save-suite-id').value;
+    const newSuiteName = document.getElementById('save-new-suite-name').value.trim();
+    
+    if (!name) { alert('Please enter a name for this test case'); return; }
+    if (!suiteId && !newSuiteName) { alert('Please select a suite or enter a new suite name'); return; }
+
+    try {
+        const resp = await fetch(`/api/test-cases/${currentTestCaseId}/save-to-suite`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, suite_id: suiteId, new_suite_name: newSuiteName })
+        });
+        
+        if (resp.ok) {
+            document.getElementById('save-suite-panel').innerHTML = `
+                <div class="flex items-center justify-center py-4 text-emerald-400 font-bold gap-2">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Saved Successfully
+                </div>
+            `;
+            setTimeout(() => document.getElementById('save-suite-panel').classList.add('hidden'), 2000);
+        } else {
+            const data = await resp.json();
+            alert('Save failed: ' + (data.error || 'Unknown error'));
+        }
+    } catch (err) {
+        alert('Save failed: ' + err.message);
+    }
+}
+</script>
+{% endblock %}

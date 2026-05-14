@@ -7,7 +7,6 @@ __pycache__/
 *.pyo
 screenshots/*.png
 reports/*.json
-site-map.json
 *.egg-info/
 dist/
 build/
@@ -16,8 +15,6 @@ build/
 captures/
 screenshots/
 scratch/
-instance/*.db
 *.log
 *.png
-*.html
 top_bar_out*.txt
