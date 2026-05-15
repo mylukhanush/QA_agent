@@ -166,6 +166,13 @@
             <h1 class="text-2xl font-bold text-white">Test Cases & Suites</h1>
             <p class="text-sm text-gray-400 mt-1">Manage unassigned test cases and organize them into suites</p>
         </div>
+        <button onclick="refreshRunsPage()"
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10 hover:text-white transition-all text-sm font-semibold">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582M20 20v-5h-.581M5.082 9A7.5 7.5 0 0119 11.5M18.918 15A7.5 7.5 0 015 12.5" />
+            </svg>
+            Refresh
+        </button>
     </div>
 
 
@@ -1058,5 +1065,9 @@
     document.getElementById('modal-suite-id')?.addEventListener('change', function () {
         document.getElementById('modal-new-suite-container').style.display = this.value === "" ? 'block' : 'none';
     });
+
+    function refreshRunsPage() {
+        window.location.reload();
+    }
 </script>
 {% endblock %}

@@ -288,9 +288,30 @@
     }
 
     .qa-run-page .site-chip .chip-content {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        border: 1px solid #e5e7eb;
+        border-radius: 1rem;
+        padding: 0.65rem 0.95rem;
         background: #ffffff;
         border-color: #e5e7eb;
         color: #475569;
+    }
+
+    .qa-run-page .site-chip .dot-icon {
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: 999px;
+        background: #94a3b8;
+    }
+
+    .qa-run-page .site-chip .check-icon {
+        width: 0.8rem;
+        height: 0.8rem;
+        opacity: 0;
+        transform: scale(0.8);
+        transition: opacity 120ms ease, transform 120ms ease;
     }
 
     .qa-run-page .site-chip:hover .chip-content {
@@ -303,6 +324,11 @@
         background: #eef2ff;
         border-color: rgba(79, 70, 229, 0.35);
         color: #4338ca;
+    }
+
+    .qa-run-page .site-chip input:checked + .chip-content .check-icon {
+        opacity: 1;
+        transform: scale(1);
     }
 
     .qa-run-page .site-chip.is-running .chip-content {
@@ -495,11 +521,14 @@
                             <path stroke-linecap="round" stroke-linejoin="round" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <span>All Sites</span>
+                        <svg class="check-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
                     </div>
                 </label>
                 {% for site in sites %}
                 <label class="site-chip" data-site="{{ site.name }}">
-                    <input type="checkbox" value="{{ site.name }}" class="sr-only site-cb" checked>
+                    <input type="checkbox" value="{{ site.name }}" class="sr-only site-cb">
                     <div class="chip-content">
                         <div class="dot-icon"></div>
                         <svg class="check-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
@@ -567,16 +596,30 @@ function normalizeGeneratedPlanPayload(payload) {
 }
 
 function saveState() {
+    const selectedSites = getSelectedSites();
     const state = {
         situation: document.getElementById('situation-input').value,
         currentPlan,
         currentTestCaseId,
         currentRunIds,
+        selectedSites,
         lastSteps,
         liveStatus: document.getElementById('live-line').textContent,
         chatVisible: !document.getElementById('chat-thread').classList.contains('hidden')
     };
     localStorage.setItem('runTestState', JSON.stringify(state));
+}
+
+function setSelectedSites(siteNames) {
+    const selected = new Set(Array.isArray(siteNames) ? siteNames : []);
+    const cbs = document.querySelectorAll('.site-cb');
+    cbs.forEach(cb => {
+        cb.checked = selected.has(cb.value);
+    });
+    const allCb = document.getElementById('site-all');
+    if (allCb) {
+        allCb.checked = cbs.length > 0 && Array.from(cbs).every(cb => cb.checked);
+    }
 }
 
 function scrollThreadToBottom() {
@@ -676,6 +719,7 @@ function toggleAllSites(el) {
         cb.checked = el.checked;
         cb.dispatchEvent(new Event('change'));
     });
+    saveState();
 }
 
 function getSelectedSites() {
@@ -700,6 +744,7 @@ async function restoreState() {
         enterChatMode();
         document.getElementById('situation-input').value = state.situation || '';
         autoResizeTextarea(document.getElementById('situation-input'));
+        setSelectedSites(state.selectedSites && state.selectedSites.length ? state.selectedSites : []);
         currentPlan = state.currentPlan;
         currentTestCaseId = state.currentTestCaseId;
         currentRunIds = state.currentRunIds;
@@ -985,6 +1030,12 @@ function escapeHtml(value) {
 document.addEventListener('DOMContentLoaded', () => {
     const textarea = document.getElementById('situation-input');
     autoResizeTextarea(textarea);
+    const siteCbs = document.querySelectorAll('.site-cb');
+    siteCbs.forEach(cb => cb.addEventListener('change', saveState));
+    if (!localStorage.getItem('runTestState')) {
+        // First visit fallback: keep all sites selected.
+        setSelectedSites(Array.from(siteCbs).map(cb => cb.value));
+    }
     textarea.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
