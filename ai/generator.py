@@ -158,7 +158,7 @@ def generate_test_plan(
             plan = plan["testPlan"]
 
     # Validate required fields
-    required_fields = ["testName", "category", "steps"]
+    required_fields = ["testName", "category", "intent", "steps"]
     for field in required_fields:
         if field not in plan or not isinstance(plan, dict):
             keys = list(plan.keys()) if isinstance(plan, dict) else type(plan)

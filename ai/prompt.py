@@ -17,14 +17,15 @@ because they are provided in the site-map.json below.
 
 CRITICAL RULES:
 1. Only use selectors that exist in the site-map.json. Never invent selectors.
-2. Always include login steps first unless the test is specifically about login failure.
+2. Always include the full 7-step login flow first UNLESS the test intent is invalid_login. For invalid_login tests, use the shorter INVALID LOGIN FLOW instead.
 3. Always include proper wait steps after navigation — use wait_for_element or wait_for_response.
 4. Never use arbitrary timeouts or sleep — all waits must be event-driven.
 5. For value comparisons, always use store_value + compare_values pattern.
 6. Take screenshots on assertion failures using onFailure: "screenshot".
 7. Return ONLY valid JSON — no markdown, no explanation.
 8. ALWAYS use the exact credentials provided in SITE CREDENTIALS below. Never invent usernames or passwords.
-9. ALWAYS follow the exact LOGIN FLOW below — this app uses OTP. Never skip the OTP steps.
+9. For VALID login tests and all non-login tests: ALWAYS follow the exact LOGIN FLOW below — this app uses OTP. Never skip the OTP steps.
+   For INVALID login tests: use the INVALID LOGIN FLOW instead — do NOT include OTP steps because invalid credentials will never receive an OTP.
 10. SELECTOR RULES — CRITICAL:
     - Use ONLY SHORT, SIMPLE selectors. Maximum 2-3 levels of nesting.
     - Prefer: ID selectors (#myId), unique class (.my-class), or short CSS (.parent .child).
@@ -33,11 +34,43 @@ CRITICAL RULES:
     - For text-based targeting use :has-text("label") on the closest meaningful element.
     - If a selector from site-map.json is already short and specific, use it exactly.
     - If no good selector exists in site-map.json for a step, use a short structural selector like the label's text anchor or a nav link.
-11. VALUE ASSERTIONS — CRITICAL:
-    - The `value_sample` field in site-map.json is a SNAPSHOT captured at crawl time. It changes daily. NEVER use value_sample values in assert_equal steps.
-    - For `data_presence` tests: use `assert_not_empty` to verify values exist — do NOT assert specific numbers.
-    - Only use `assert_equal` to compare two CAPTURED variables from the SAME test run (e.g. compare notReportingValue on site A vs site B).
-    - NEVER hardcode numbers like "55" or "2178" as expected values in any assertion.
+11. VALUE ASSERTIONS — CRITICAL, read carefully:
+
+    RULE 1 — value_sample in site-map.json is a crawl-time snapshot.
+    It changes daily. NEVER use value_sample in any assertion.
+    Example of what NOT to do:
+      site-map has value_sample: "55" for Not Reporting card
+      DO NOT generate: assert_equal target: notReporting, value: "55"
+      This would be wrong because 55 is from the sitemap snapshot.
+
+    RULE 2 — Values the USER explicitly states in their prompt are
+    expected values. ALWAYS assert them with assert_equal.
+    Example of what TO do:
+      User says "check if not reporting value is 55"
+      CORRECT: get_text → storeAs: notReporting
+               assert_equal → target: notReporting, value: "55"
+      User says "verify total vehicles is 476"
+      CORRECT: get_text → storeAs: totalVehicles
+               assert_equal → target: totalVehicles, value: "476"
+
+    RULE 3 — If the user does NOT specify an expected value,
+    use assert_not_empty only — never invent an expected value.
+    Example:
+      User says "check the not reporting value on dashboard"
+      CORRECT: get_text → storeAs: notReporting
+               assert_not_empty → target: notReporting
+      User says "check if not reporting value is 55"  ← number stated
+      CORRECT: assert_equal → target: notReporting, value: "55"
+
+    RULE 4 — How to detect if user provided an expected value:
+    Look for these patterns in the user prompt:
+      "is X"          → assert_equal to X
+      "equals X"      → assert_equal to X
+      "should be X"   → assert_equal to X
+      "must be X"     → assert_equal to X
+      "= X"           → assert_equal to X
+      "matches X"     → assert_equal to X
+      no number given → assert_not_empty only
 
     - For any request about a report in the Reports tab (e.g., NRD History, Distance, Alerts), find the matching report page selectors in site-map.json (e.g., `reports_nrd_history`, `reports_distance`, `reports_alert`).
     - The report selectors were crawled on jhs82, but they apply to all JHS sites. Use the target site's credentials/base URL for login and navigation; do not navigate a jhs84 test to the jhs82 URL.
@@ -150,13 +183,15 @@ def _build_login_steps(site_id: str, base_url: str, username: str, password: str
 OUTPUT_SCHEMA = """{
   "testName": "string — short descriptive name",
   "category": "value_comparison | auth_validation | data_presence | cross_site | filter_consistency",
+  "intent": "valid_login | invalid_login | data_present | data_absent | values_match | values_differ | ui_element_present | ui_element_absent | value_equals_expected | value_not_equals_expected",
+  "expectedValue": "the value the user explicitly stated, or null if not specified",
   "description": "string — what this test verifies",
   "targetSites": ["jhs81", "jhs82"],
   "runParallel": false,
   "steps": [
     {
       "id": "step_1",
-      "action": "navigate | login | click | check | uncheck | wait_for_element | wait_for_response | get_text | count_elements | assert_equal | assert_not_empty | assert_contains | assert_not_equal | type_text | select_option | screenshot | store_value | compare_values",
+      "action": "navigate | login | click | check | uncheck | wait_for_element | wait_for_response | get_text | count_elements | assert_equal | assert_not_empty | assert_contains | assert_not_equal | type_text | select_option | screenshot | store_value | compare_values | select_date_range | assert_url_contains | assert_url_not_contains",
       "target": "CSS selector or URL or API endpoint pattern",
       "value": "text to type or expected value or null",
       "storeAs": "variable name or null",
@@ -204,13 +239,66 @@ RECENT TEST CASES (avoid duplicating these):
             login_steps_example = _build_login_steps(first_site, c["url"], c["username"], c["password"], start_id=1)
             creds_section += f"""
 
-LOGIN FLOW (MANDATORY — always start every test with these exact 7 steps in this exact order):
+LOGIN FLOW (MANDATORY for valid_login and all non-login tests — use these exact 7 steps):
 The app uses a TWO-STEP login: username+password → Send OTP → enter OTP → Login.
 Step 4 clicks "Send OTP" (button.login_btn), step 6 clicks "Login" (button.login_btn again after OTP entry.
 Example login steps for {first_site}:
 {login_steps_example}
 
 After these 7 steps the user is authenticated. Continue with test-specific steps from step_8 onward.
+
+INVALID LOGIN FLOW (MANDATORY for invalid_login tests — do NOT use the 7-step flow above):
+When testing with invalid credentials, OTP will NEVER be sent. The server rejects
+invalid credentials at the Send OTP stage. Therefore you MUST NOT include OTP entry steps.
+Use ONLY these steps for invalid login tests:
+  step_1: navigate → to login page
+  step_2: type_text → enter invalid username
+  step_3: type_text → enter invalid password
+  step_4: click → button.login_btn (Send OTP — will fail/show error with invalid creds)
+  step_5: wait_for_element → wait for error message (.error-message, .alert-danger, [class*='error'], :has-text('Invalid'), :has-text('incorrect')) with onFailure: "continue"
+  step_6: assert_url_contains → value: "login" (proves user was NOT redirected away)
+Do NOT include: OTP input steps, second login button click, or wait_for dashboard.
+Invalid credentials = no OTP field = those steps will always timeout and give false errors.
+"""
+
+    intent_rules = """
+INTENT FIELD — MANDATORY, never omit this field:
+- auth_validation with valid credentials   → intent: "valid_login"
+- auth_validation with invalid credentials → intent: "invalid_login"
+- data_presence verifying data exists      → intent: "data_present"
+- data_presence verifying data is absent   → intent: "data_absent"
+- value_comparison expecting values match  → intent: "values_match"
+- value_comparison expecting values differ → intent: "values_differ"
+- verifying a UI element is present        → intent: "ui_element_present"
+- verifying a UI element is absent         → intent: "ui_element_absent"
+- User states an exact expected value      → intent: "value_equals_expected"
+  Set expectedValue field to what the user stated.
+- User states value should NOT be X        → intent: "value_not_equals_expected"
+  Set expectedValue field to the value it should not equal.
+
+INVALID LOGIN — CRITICAL FLOW RULE:
+For intent: "invalid_login", NEVER include the full 7-step OTP login flow.
+Invalid credentials will be rejected at the Send OTP stage — the OTP input field
+will NEVER appear. Including OTP steps causes timeouts that produce false "error"
+results instead of the correct "fail" result.
+Correct invalid_login flow: navigate → type invalid creds → click Send OTP →
+wait for error message (onFailure: continue) → assert_url_contains "login".
+Total: 5-6 steps maximum. No OTP steps.
+
+LAST STEP RULE — MANDATORY:
+The final step of every test MUST be an assertion that directly
+proves the intent. Examples:
+- invalid_login  → last step: assert_url_contains "login" (NOT an OTP or dashboard step)
+- valid_login    → last step: assert_url_not_contains "login"
+- data_present   → last step: assert_not_empty on the captured variable
+- values_match   → last step: assert_equal or compare_values
+- values_differ  → last step: assert_not_equal
+Never end a test on a navigate, click, or wait step.
+
+URL ASSERTIONS — use these as the final step for auth tests:
+- After valid login:   assert_url_not_contains, value: "login"
+- After invalid login: assert_url_contains, value: "login"
+These are more reliable than element assertions for auth outcomes.
 """
 
     prompt = f"""{SYSTEM_CONTEXT}
@@ -224,6 +312,8 @@ SITE MAP (contains all available selectors and page structure):
 
 OUTPUT JSON SCHEMA (return exactly this structure):
 {OUTPUT_SCHEMA}
+
+{intent_rules}
 
 USER REQUEST:
 Situation: {situation}

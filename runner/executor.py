@@ -126,6 +126,17 @@ def execute_test_plan(test_plan: dict, run_ids: dict):
                 error_message=str(exc),
             )
 
+            # Generate report even on catastrophic failure
+            try:
+                from reports.json_report import generate_json_report
+                report_path = generate_json_report(run_id)
+                run = TestRun.query.get(run_id)
+                if run:
+                    run.report_path = report_path
+                    db.session.commit()
+            except Exception as report_exc:
+                print(f"[EXECUTOR] Failed to generate error report: {report_exc}", flush=True)
+
 
 def _execute_for_site(test_plan, site_name, run_id, site_map, login_info):
     """Execute all steps against a single site."""
@@ -138,6 +149,17 @@ def _execute_for_site(test_plan, site_name, run_id, site_map, login_info):
     steps = test_plan.get("steps", [])
     overall_status = "pass"
     should_stop = False
+
+    def _escalate_status(current: str, new: str) -> str:
+        """
+        Status priority: error > fail > pass
+        Once error is set, nothing can downgrade it.
+        Once fail is set, only error can upgrade it.
+        """
+        priority = {"pass": 0, "fail": 1, "error": 2}
+        if priority.get(new, 0) > priority.get(current, 0):
+            return new
+        return current
 
     with sync_playwright() as pw:
         # Force visible browser by default (headless=False)
@@ -305,7 +327,22 @@ def _execute_for_site(test_plan, site_name, run_id, site_map, login_info):
                 elif action == "assert_equal":
                     actual = _resolve_value(target, variables, page)
                     expected = _resolve_value(value or compare_with, variables, page)
-                    if str(actual) != str(expected):
+                    matched = str(actual) == str(expected)
+
+                    # Record the comparison result
+                    page_name = _guess_page_name(page.url, site_map)
+                    _record_value_capture(
+                        run_id=run_id,
+                        site_id=site.id,
+                        label=f"assert_equal: {target} vs {value or compare_with}",
+                        page_name=page_name,
+                        selector=target,
+                        captured_value=str(actual),
+                        expected_value=str(expected),
+                        matched=matched,
+                    )
+
+                    if not matched:
                         raise AssertionError(
                             f"Expected '{expected}' but got '{actual}'"
                         )
@@ -340,7 +377,21 @@ def _execute_for_site(test_plan, site_name, run_id, site_map, login_info):
                     var_b = _resolve_var_reference(compare_with)
                     val_a = variables.get(var_a, "")
                     val_b = variables.get(var_b, "")
-                    if str(val_a) != str(val_b):
+                    matched = str(val_a) == str(val_b)
+
+                    page_name = _guess_page_name(page.url, site_map)
+                    _record_value_capture(
+                        run_id=run_id,
+                        site_id=site.id,
+                        label=f"compare: {var_a} vs {var_b}",
+                        page_name=page_name,
+                        selector=f"{var_a} vs {var_b}",
+                        captured_value=str(val_a),
+                        expected_value=str(val_b),
+                        matched=matched,
+                    )
+
+                    if not matched:
                         raise AssertionError(
                             f"Comparison mismatch: '{var_a}'='{val_a}' vs "
                             f"'{var_b}'='{val_b}'"
@@ -514,6 +565,22 @@ def _execute_for_site(test_plan, site_name, run_id, site_map, login_info):
                         ok_btn.click()
                     page.wait_for_load_state("domcontentloaded")
 
+                elif action == "assert_url_contains":
+                    if not value:
+                        raise AssertionError("assert_url_contains requires a value")
+                    if value.lower() not in page.url.lower():
+                        raise AssertionError(
+                            f"Expected URL to contain '{value}' but got '{page.url}'"
+                        )
+
+                elif action == "assert_url_not_contains":
+                    if not value:
+                        raise AssertionError("assert_url_not_contains requires a value")
+                    if value.lower() in page.url.lower():
+                        raise AssertionError(
+                            f"Expected URL to NOT contain '{value}' but got '{page.url}'"
+                        )
+
                 else:
                     error_msg = f"Unknown action: {action}"
                     step_status = "error"
@@ -521,7 +588,7 @@ def _execute_for_site(test_plan, site_name, run_id, site_map, login_info):
             except AssertionError as exc:
                 step_status = "fail"
                 error_msg = str(exc)
-                overall_status = "fail"
+                overall_status = _escalate_status(overall_status, "fail")
                 screenshot_path = _take_screenshot(page, run_id, idx + 1)
                 if on_failure == "stop":
                     should_stop = True
@@ -529,7 +596,26 @@ def _execute_for_site(test_plan, site_name, run_id, site_map, login_info):
             except Exception as exc:
                 step_status = "error"
                 error_msg = str(exc)
-                overall_status = "error" if overall_status != "fail" else "fail"
+
+                # For invalid_login tests: timeouts on OTP-related steps are EXPECTED.
+                # Invalid credentials never receive an OTP, so OTP field timeouts
+                # should be treated as "fail" (expected rejection), not "error".
+                is_invalid_login = test_plan.get("intent") == "invalid_login"
+                is_otp_step = (
+                    "otp" in (target or "").lower()
+                    or "otp" in (description or "").lower()
+                    or "otp" in (value or "").lower()
+                )
+                is_timeout = "timeout" in str(exc).lower() or "Timeout" in str(exc)
+
+                if is_invalid_login and is_otp_step and is_timeout:
+                    # Reclassify: this timeout is expected behavior, not infra failure
+                    step_status = "fail"
+                    error_msg = f"Expected: OTP step timed out because invalid credentials were rejected. ({exc})"
+                    overall_status = _escalate_status(overall_status, "fail")
+                else:
+                    overall_status = _escalate_status(overall_status, "error")
+
                 screenshot_path = _take_screenshot(page, run_id, idx + 1)
                 if on_failure == "stop":
                     should_stop = True
@@ -543,6 +629,41 @@ def _execute_for_site(test_plan, site_name, run_id, site_map, login_info):
                 error_message=error_msg,
                 screenshot_path=screenshot_path,
             )
+
+        # Intent verification — check if the final page state proves the test intent.
+        # For most intents: runs only if all steps passed.
+        # For invalid_login: also runs on "fail" or "error" because OTP timeouts
+        # are expected — the real question is whether the login was correctly rejected.
+        should_verify_intent = (
+            overall_status == "pass"
+            or (test_plan.get("intent") == "invalid_login" and overall_status in ("fail", "error"))
+        )
+        if should_verify_intent:
+            intent_result, intent_message = _verify_intent(
+                page, test_plan, variables
+            )
+            if intent_result == "fail":
+                overall_status = "fail"
+                _record_step(
+                    run_id=run_id,
+                    step_order=len(steps) + 1,
+                    action="intent_verification",
+                    description=f"Verify test intent: {test_plan.get('intent', 'unknown')}",
+                    status="fail",
+                    error_message=intent_message,
+                    screenshot_path=_take_screenshot(page, run_id, len(steps) + 1),
+                )
+            elif intent_result == "pass" and test_plan.get("intent") == "invalid_login":
+                # Invalid login was correctly rejected — override error/fail to "pass"
+                overall_status = "pass"
+                _record_step(
+                    run_id=run_id,
+                    step_order=len(steps) + 1,
+                    action="intent_verification",
+                    description=f"Verify test intent: invalid_login",
+                    status="pass",
+                    error_message="Login was correctly rejected — invalid credentials did not grant access.",
+                )
 
         # Stop tracing and save storage state / final artifacts
         try:
@@ -585,6 +706,123 @@ def _execute_for_site(test_plan, site_name, run_id, site_map, login_info):
             run.test_case.last_run_at = datetime.now(timezone.utc)
 
         db.session.commit()
+
+
+def _verify_intent(page, test_plan: dict, variables: dict) -> tuple:
+    """
+    Verify the final page state matches what the test intended to prove.
+    Returns ("pass", "") or ("fail", reason_message).
+    """
+    intent = test_plan.get("intent", "")
+    url = page.url.lower()
+
+    if intent == "valid_login":
+        if "login" in url or "auth" in url:
+            return "fail", (
+                f"Intent was valid_login but URL still contains login/auth: {page.url}. "
+                "Valid credentials were rejected."
+            )
+
+    elif intent == "invalid_login":
+        # Must still be on login page OR an error must be visible
+        still_on_login = "login" in url or "auth" in url
+        error_locator = page.locator(
+            ".error-message, .alert-danger, .alert-error, "
+            "[class*='error'], [class*='invalid'], "
+            ":has-text('Invalid'), :has-text('incorrect'), "
+            ":has-text('wrong credentials'), :has-text('failed')"
+        )
+        error_visible = error_locator.count() > 0 and error_locator.first.is_visible()
+        if not still_on_login and not error_visible:
+            return "fail", (
+                f"Intent was invalid_login but login succeeded. "
+                f"Current URL: {page.url}. "
+                "Invalid credentials were accepted — this is a security failure."
+            )
+
+    elif intent == "data_present":
+        # At least one captured variable must be non-empty and not "No data available"
+        if variables:
+            all_empty = all(
+                not v or v.strip() in ("", "0", "No data available")
+                for v in variables.values()
+            )
+            if all_empty:
+                return "fail", (
+                    f"Intent was data_present but all captured values are empty or zero. "
+                    f"Captured: {variables}"
+                )
+
+    elif intent == "data_absent":
+        # Page should show no-data indicators
+        no_data = page.locator(
+            ":has-text('No records found'), :has-text('No data'), "
+            ":has-text('No Data Available'), :has-text('0 records')"
+        )
+        if no_data.count() == 0:
+            return "fail", (
+                "Intent was data_absent but no 'no data' indicator found. "
+                "Data may still be present on the page."
+            )
+
+    elif intent == "values_match":
+        # All captured variables that are paired must be equal
+        if len(variables) >= 2:
+            vals = list(variables.values())
+            # Check first two captured values match
+            if str(vals[0]) != str(vals[1]):
+                return "fail", (
+                    f"Intent was values_match but captured values differ: "
+                    f"{list(variables.keys())[0]}='{vals[0]}' vs "
+                    f"{list(variables.keys())[1]}='{vals[1]}'"
+                )
+
+    elif intent == "values_differ":
+        if len(variables) >= 2:
+            vals = list(variables.values())
+            if str(vals[0]) == str(vals[1]):
+                return "fail", (
+                    f"Intent was values_differ but captured values are identical: "
+                    f"both = '{vals[0]}'"
+                )
+
+    elif intent == "value_equals_expected":
+        expected = test_plan.get("expectedValue", "")
+        if not expected:
+            return "pass", ""   # no expected value declared, skip check
+
+        # Find the first captured variable and compare to expected
+        if variables:
+            first_key = list(variables.keys())[0]
+            actual = variables[first_key]
+            if str(actual).strip() != str(expected).strip():
+                return "fail", (
+                    f"Expected '{first_key}' to equal '{expected}' "
+                    f"but got '{actual}'. "
+                    f"The value on the page does not match what you specified."
+                )
+        else:
+            return "fail", (
+                f"Intent was value_equals_expected (expected: '{expected}') "
+                f"but no values were captured during the test. "
+                f"Check that get_text steps ran correctly."
+            )
+
+    elif intent == "value_not_equals_expected":
+        expected = test_plan.get("expectedValue", "")
+        if not expected:
+            return "pass", ""
+
+        if variables:
+            first_key = list(variables.keys())[0]
+            actual = variables[first_key]
+            if str(actual).strip() == str(expected).strip():
+                return "fail", (
+                    f"Expected '{first_key}' to NOT equal '{expected}' "
+                    f"but it does. The value matches when it should differ."
+                )
+
+    return "pass", ""
 
 
 # ── Action Helpers ────────────────────────────────────────────────
