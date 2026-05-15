@@ -93,6 +93,23 @@ CRITICAL RULES:
       * Also use `count_elements` on `table[role="grid"] tbody tr` or `table tbody tr` with storeAs="visibleRows" to count the number of rows rendered.
       * Then use `get_text` on `table[role="grid"] tbody tr` or `table tbody tr` with storeAs="firstRow" to capture the first row's content.
       * Assert totalRecords is not empty (assert_not_empty) to verify records loaded.
+12. FRACTION VALUE METRICS — CRITICAL:
+    - Dashboard cards often show values as fractions like "55/476" inside the heading.
+    - The element text contains BOTH the label and value concatenated (e.g. "NRD VTS Devices55/476").
+    - The sitemap selectors use ONLY the label part (e.g. h4:has-text("NRD VTS Devices")).
+    - When you use get_text on such a selector, the executor automatically extracts the fraction "55/476".
+    - If the user asks about the COUNT (first number), the first number IS the count (55 in "55/476").
+    - DO NOT use store_value to extract from a variable. store_value expects a CSS selector on the page, NOT a variable name.
+    - Correct flow: get_text → storeAs: nrdCount → assert_equal target: nrdCount, value: "47"
+    - The executor's _extract_number_or_fraction() will return "55/476" as-is for fractions, or just "55" for plain numbers.
+    - WRONG: get_text → storeAs: rawText, then store_value target: rawText (store_value is NOT for variables!)
+13. SELECTOR NUMERIC STRIPPING — MANDATORY:
+    - NEVER include numeric values in :has-text() selectors. The numbers change daily.
+    - CORRECT: h4:has-text("NRD VTS Devices")
+    - WRONG:  h4:has-text("NRD VTS Devices55/476")
+    - CORRECT: h4:has-text("Under Maintenance")
+    - WRONG:  h4:has-text("Under Maintenance 56/476")
+    - If site-map.json contains a selector with numbers in :has-text(), strip the numbers before using it.
 
 TEST CATEGORIES:
 - value_comparison: Compare a value between two pages or locations. Steps: navigate → wait → capture → navigate → wait → capture → assert_equal

@@ -2777,14 +2777,14 @@
           "text_anchor_label": "Fault Codes"
         },
         {
-          "label": "Total Fault Codes 0",
-          "selector": "h6:has-text(\"Total Fault Codes 0\")",
+          "label": "Total Fault Codes",
+          "selector": "h6:has-text(\"Total Fault Codes\")",
           "backup_selector": "",
           "element_type": "heading",
           "section": "page_structure",
-          "is_dynamic": false,
-          "value_sample": "Total Fault Codes 0",
-          "text_anchor_label": "Total Fault Codes 0"
+          "is_dynamic": true,
+          "value_sample": "0",
+          "text_anchor_label": "Total Fault Codes"
         },
         {
           "label": "Fault Codes",
@@ -2993,24 +2993,14 @@
       "api_endpoints": [],
       "elements": [
         {
-          "label": "55",
-          "selector": "h3:has-text(\"55\")",
+          "label": "NRD Count",
+          "selector": "h3",
           "backup_selector": "",
           "element_type": "heading",
           "section": "page_structure",
-          "is_dynamic": false,
+          "is_dynamic": true,
           "value_sample": "55",
-          "text_anchor_label": "55"
-        },
-        {
-          "label": "56",
-          "selector": "h3:has-text(\"56\")",
-          "backup_selector": "",
-          "element_type": "heading",
-          "section": "page_structure",
-          "is_dynamic": false,
-          "value_sample": "56",
-          "text_anchor_label": "56"
+          "text_anchor_label": "NRD Count"
         },
         {
           "label": "Response Time",
@@ -3033,74 +3023,74 @@
           "text_anchor_label": "Resolution Rate"
         },
         {
-          "label": "NRD VTS Devices55/476",
-          "selector": "h4:has-text(\"NRD VTS Devices55/476\")",
+          "label": "NRD VTS Devices",
+          "selector": "h4:has-text(\"NRD VTS Devices\")",
           "backup_selector": "",
           "element_type": "heading",
           "section": "page_structure",
-          "is_dynamic": false,
-          "value_sample": "NRD VTS Devices55/476",
-          "text_anchor_label": "NRD VTS Devices55/476"
+          "is_dynamic": true,
+          "value_sample": "55/476",
+          "text_anchor_label": "NRD VTS Devices"
         },
         {
-          "label": "Probable Wiring Issues1/476",
-          "selector": "h4:has-text(\"Probable Wiring Issues1/476\")",
+          "label": "Probable Wiring Issues",
+          "selector": "h4:has-text(\"Probable Wiring Issues\")",
           "backup_selector": "",
           "element_type": "heading",
           "section": "page_structure",
-          "is_dynamic": false,
-          "value_sample": "Probable Wiring Issues1/476",
-          "text_anchor_label": "Probable Wiring Issues1/476"
+          "is_dynamic": true,
+          "value_sample": "1/476",
+          "text_anchor_label": "Probable Wiring Issues"
         },
         {
-          "label": "Under Maintenance 56/476",
-          "selector": "h4:has-text(\"Under Maintenance 56/476\")",
+          "label": "Under Maintenance",
+          "selector": "h4:has-text(\"Under Maintenance\")",
           "backup_selector": "",
           "element_type": "heading",
           "section": "page_structure",
-          "is_dynamic": false,
-          "value_sample": "Under Maintenance 56/476",
-          "text_anchor_label": "Under Maintenance 56/476"
+          "is_dynamic": true,
+          "value_sample": "56/476",
+          "text_anchor_label": "Under Maintenance"
         },
         {
-          "label": "Camera Inactive 2/7",
-          "selector": "h4:has-text(\"Camera Inactive 2/7\")",
+          "label": "Camera Inactive",
+          "selector": "h4:has-text(\"Camera Inactive\")",
           "backup_selector": "",
           "element_type": "heading",
           "section": "page_structure",
-          "is_dynamic": false,
-          "value_sample": "Camera Inactive 2/7",
-          "text_anchor_label": "Camera Inactive 2/7"
+          "is_dynamic": true,
+          "value_sample": "2/7",
+          "text_anchor_label": "Camera Inactive"
         },
         {
-          "label": "Camera Under Maintenance 2/7",
-          "selector": "h4:has-text(\"Camera Under Maintenance 2/7\")",
+          "label": "Camera Under Maintenance",
+          "selector": "h4:has-text(\"Camera Under Maintenance\")",
           "backup_selector": "",
           "element_type": "heading",
           "section": "page_structure",
-          "is_dynamic": false,
-          "value_sample": "Camera Under Maintenance 2/7",
-          "text_anchor_label": "Camera Under Maintenance 2/7"
+          "is_dynamic": true,
+          "value_sample": "2/7",
+          "text_anchor_label": "Camera Under Maintenance"
         },
         {
-          "label": "Camera Obstruction Alert-/-",
-          "selector": "h4:has-text(\"Camera Obstruction Alert-/-\")",
+          "label": "Camera Obstruction Alert",
+          "selector": "h4:has-text(\"Camera Obstruction Alert\")",
           "backup_selector": "",
           "element_type": "heading",
           "section": "page_structure",
-          "is_dynamic": false,
-          "value_sample": "Camera Obstruction Alert-/-",
-          "text_anchor_label": "Camera Obstruction Alert-/-"
+          "is_dynamic": true,
+          "value_sample": "-/-",
+          "text_anchor_label": "Camera Obstruction Alert"
         },
         {
-          "label": "Voicebox Tampering Alerts-/-",
-          "selector": "h4:has-text(\"Voicebox Tampering Alerts-/-\")",
+          "label": "Voicebox Tampering Alerts",
+          "selector": "h4:has-text(\"Voicebox Tampering Alerts\")",
           "backup_selector": "",
           "element_type": "heading",
           "section": "page_structure",
-          "is_dynamic": false,
-          "value_sample": "Voicebox Tampering Alerts-/-",
-          "text_anchor_label": "Voicebox Tampering Alerts-/-"
+          "is_dynamic": true,
+          "value_sample": "-/-",
+          "text_anchor_label": "Voicebox Tampering Alerts"
         }
       ]
     },

@@ -132,18 +132,51 @@ def _extract_elements(page, page_name: str, elements=None, discovered_selectors=
                         txt = (h.text_content(timeout=1000) or "").strip()
                         if not txt or len(txt) < 2 or len(txt) > 100:
                             continue
-                        sel = f'{hsel}:has-text("{txt.replace(chr(34), chr(39))}")'
+
+                        # Strip trailing numeric values from headings.
+                        # Dashboard cards render "NRD VTS Devices55/476" as a single
+                        # text node — the label and value are concatenated.
+                        # We need ONLY the label part for the selector (stable),
+                        # and store the numeric part as value_sample (dynamic).
+                        import re as _re
+                        # Match trailing fractions (55/476, -/-), numbers (55), or
+                        # number patterns that are concatenated to the label text
+                        _trailing_num = _re.search(
+                            r'(\s*\d[\d,]*\s*/\s*\d[\d,]*|\s*-\s*/\s*-|\s+\d[\d,]*)$',
+                            txt
+                        )
+                        if _trailing_num:
+                            label_part = txt[:_trailing_num.start()].strip()
+                            value_part = _trailing_num.group().strip()
+                        else:
+                            # Also catch cases like "DeviceName55/476" where there's
+                            # no space between the label and value
+                            _concat_num = _re.search(
+                                r'(\d[\d,]*\s*/\s*\d[\d,]*)$', txt
+                            )
+                            if _concat_num:
+                                label_part = txt[:_concat_num.start()].strip()
+                                value_part = _concat_num.group().strip()
+                            else:
+                                label_part = txt
+                                value_part = txt
+
+                        # Use the clean label for the selector (stable across values)
+                        if not label_part or len(label_part) < 2:
+                            label_part = txt  # fallback if stripping removed everything
+
+                        sel = f'{hsel}:has-text("{label_part.replace(chr(34), chr(39))}")'
                         if sel not in discovered_selectors:
                             discovered_selectors.add(sel)
                             elements.append({
-                                "label": txt,
+                                "label": label_part,
                                 "selector": sel,
                                 "backup_selector": "",
                                 "element_type": "heading",
                                 "section": "page_structure",
-                                "is_dynamic": False,
-                                "value_sample": txt,
-                                "text_anchor_label": txt,
+                                "is_dynamic": True if value_part != label_part else False,
+                                "value_sample": value_part if value_part != label_part else txt,
+                                "text_anchor_label": label_part,
                             })
                     except Exception:
                         continue

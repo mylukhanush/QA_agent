@@ -329,6 +329,19 @@ def _execute_for_site(test_plan, site_name, run_id, site_map, login_info):
                     expected = _resolve_value(value or compare_with, variables, page)
                     matched = str(actual) == str(expected)
 
+                    # Smart fraction comparison: if one side is a fraction "46/503"
+                    # and the other is a plain number "47", compare the numerator.
+                    if not matched:
+                        actual_str = str(actual).strip()
+                        expected_str = str(expected).strip()
+                        frac_match = re.match(r'^(\d+)\s*/\s*\d+$', actual_str)
+                        if frac_match and re.match(r'^\d+$', expected_str):
+                            # Compare numerator of fraction against the expected number
+                            matched = frac_match.group(1) == expected_str
+                            if not matched:
+                                # Update actual to show just the numerator for clearer error msg
+                                actual = f"{frac_match.group(1)} (from {actual_str})"
+
                     # Record the comparison result
                     page_name = _guess_page_name(page.url, site_map)
                     _record_value_capture(
