@@ -618,17 +618,11 @@ function renderLiveLine(steps, overallStatus = 'running') {
     const line = document.getElementById('live-line');
     const label = document.getElementById('live-label');
     const normalizedSteps = Array.isArray(steps) ? steps : [];
-    const currentStep = normalizedSteps.find(step => step.status === 'running')
-        || [...normalizedSteps].reverse().find(step => step.status === 'fail' || step.status === 'error')
-        || normalizedSteps[normalizedSteps.length - 1];
 
     let text = 'Starting test execution...';
     let labelText = 'Live execution running';
-    if (currentStep) {
-        const order = Number.isFinite(currentStep.step_order) ? currentStep.step_order + 1 : '?';
-        const description = currentStep.description || currentStep.action || 'In progress';
-        text = `Step ${order}: ${description}`;
-    } else if (overallStatus === 'pass') {
+
+    if (overallStatus === 'pass') {
         text = 'Execution completed successfully.';
         labelText = 'Live execution completed';
     } else if (overallStatus === 'fail') {
@@ -637,6 +631,15 @@ function renderLiveLine(steps, overallStatus = 'running') {
     } else if (overallStatus === 'error') {
         text = 'Execution stopped with an error.';
         labelText = 'Live execution error';
+    } else {
+        const currentStep = normalizedSteps.find(step => step.status === 'running')
+            || [...normalizedSteps].reverse().find(step => step.status === 'fail' || step.status === 'error')
+            || normalizedSteps[normalizedSteps.length - 1];
+        if (currentStep) {
+            const order = Number.isFinite(currentStep.step_order) ? currentStep.step_order + 1 : '?';
+            const description = currentStep.description || currentStep.action || 'In progress';
+            text = `Step ${order}: ${description}`;
+        }
     }
 
     label.textContent = labelText;
@@ -929,6 +932,7 @@ async function saveTestCase() {
     const name = document.getElementById('save-tc-name').value.trim();
     const suiteId = document.getElementById('save-suite-id').value;
     const newSuiteName = document.getElementById('save-new-suite-name').value.trim();
+    const targetSites = currentRunIds ? Object.keys(currentRunIds) : getSelectedSites();
 
     if (!name) {
         alert('Please enter a name for this test case');
@@ -944,7 +948,7 @@ async function saveTestCase() {
         const resp = await fetch(`/api/test-cases/${currentTestCaseId}/save-to-suite`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, suite_id: suiteId, new_suite_name: newSuiteName })
+            body: JSON.stringify({ name, suite_id: suiteId, new_suite_name: newSuiteName, target_sites: targetSites })
         });
 
         if (!resp.ok) {

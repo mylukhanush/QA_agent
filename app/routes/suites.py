@@ -136,10 +136,27 @@ def save_to_suite(tc_id):
     tc_name = (data.get("name") or "").strip()
     suite_id = data.get("suite_id")
     new_suite_name = (data.get("new_suite_name") or "").strip()
+    target_sites = data.get("target_sites") or data.get("targetSites") or []
 
     test_case = TestCase.query.get_or_404(tc_id)
     if tc_name:
         test_case.name = tc_name
+    existing_plan = test_case.test_plan if isinstance(test_case.test_plan, dict) else {}
+    if isinstance(target_sites, list):
+        normalized_sites = [str(s).strip() for s in target_sites if str(s).strip()]
+        if normalized_sites:
+            # Normalize site scope key so suite execution can consistently read it.
+            existing_plan["target_sites"] = normalized_sites
+            existing_plan["targetSites"] = normalized_sites
+            test_case.test_plan = existing_plan
+    elif existing_plan:
+        # Backfill from older camelCase plans when save payload did not include target sites.
+        existing_targets = existing_plan.get("target_sites") or existing_plan.get("targetSites") or []
+        normalized_sites = [str(s).strip() for s in existing_targets if str(s).strip()]
+        if normalized_sites:
+            existing_plan["target_sites"] = normalized_sites
+            existing_plan["targetSites"] = normalized_sites
+            test_case.test_plan = existing_plan
 
     if new_suite_name:
         suite = TestSuite.query.filter_by(name=new_suite_name).first()
@@ -161,11 +178,57 @@ def save_to_suite(tc_id):
     db.session.commit()
     return jsonify({"status": "saved", "id": str(test_case.id), "suite_id": str(suite.id) if suite else None})
 
+
+@suites_bp.route("/api/test-cases/bulk-save-to-suite", methods=["POST"])
+def bulk_save_to_suite():
+    data = request.json or {}
+    test_case_ids = data.get("test_case_ids") or []
+    suite_id = data.get("suite_id")
+    new_suite_name = (data.get("new_suite_name") or "").strip()
+
+    if not test_case_ids or not isinstance(test_case_ids, list):
+        return jsonify({"error": "test_case_ids must be a non-empty list"}), 400
+
+    if new_suite_name:
+        suite = TestSuite.query.filter_by(name=new_suite_name).first()
+        if suite is None:
+            suite = TestSuite(name=new_suite_name)
+            db.session.add(suite)
+            db.session.flush()
+    elif suite_id:
+        suite = TestSuite.query.get(suite_id)
+        if suite is None:
+            return jsonify({"error": "Selected suite was not found"}), 404
+    else:
+        return jsonify({"error": "suite_id or new_suite_name is required"}), 400
+
+    test_cases = TestCase.query.filter(TestCase.id.in_(test_case_ids)).all()
+    if not test_cases:
+        return jsonify({"error": "No valid test cases found"}), 404
+
+    assigned_count = 0
+    for test_case in test_cases:
+        if test_case not in suite.test_cases:
+            suite.test_cases.append(test_case)
+            assigned_count += 1
+
+    db.session.commit()
+    return jsonify({
+        "status": "saved",
+        "suite_id": str(suite.id),
+        "requested_count": len(test_case_ids),
+        "found_count": len(test_cases),
+        "assigned_count": assigned_count
+    })
+
 @suites_bp.route("/api/suites/<suite_id>/run", methods=["POST"])
 def run_suite(suite_id):
     suite = TestSuite.query.get_or_404(suite_id)
     if not suite.test_cases:
         return jsonify({"error": "This suite has no test cases"}), 400
+    active_sites = Site.query.filter_by(is_active=True).all()
+    if not active_sites:
+        return jsonify({"error": "No active sites available"}), 400
 
     # Create a SuiteRun record
     suite_run = SuiteRun(suite_id=suite.id, status="running")
@@ -183,21 +246,28 @@ def run_suite(suite_id):
             "steps": tc.steps or [],
         }
 
-        # Run this test case only on sites where it was previously executed.
+        # Site selection priority per test case:
+        # 1) Explicit target_sites saved with the test case
+        # 2) Historical run sites for the test case
+        # 3) All active sites (fallback)
+        target_site_names = []
+        if isinstance(tc.test_plan, dict):
+            raw_sites = tc.test_plan.get("target_sites") or tc.test_plan.get("targetSites") or []
+            if isinstance(raw_sites, list):
+                target_site_names = [str(s).strip() for s in raw_sites if str(s).strip()]
+
+        sites = []
+        if target_site_names:
+            allowed = set(target_site_names)
+            sites = [s for s in active_sites if s.name in allowed]
+
         historical_site_ids = {
             r.site_id for r in tc.test_runs if r.site_id is not None
         }
-        if not historical_site_ids:
-            # If no history exists for this test case, skip it to avoid running on all sites unexpectedly.
-            continue
-
-        sites = (
-            Site.query
-            .filter(Site.id.in_(list(historical_site_ids)), Site.is_active.is_(True))
-            .all()
-        )
+        if not sites and historical_site_ids:
+            sites = [s for s in active_sites if s.id in historical_site_ids]
         if not sites:
-            continue
+            sites = active_sites
 
         run_ids = {}
         for site in sites:
@@ -223,7 +293,7 @@ def run_suite(suite_id):
         suite_run.duration_ms = 0
         db.session.commit()
         return jsonify({
-            "error": "No eligible historical site runs found for suite test cases."
+            "error": "No eligible active site runs found for suite test cases."
         }), 400
 
     return jsonify({
@@ -303,3 +373,43 @@ def delete_test_case(tc_id):
     db.session.delete(test_case)
     db.session.commit()
     return jsonify({"status": "deleted", "id": str(test_case.id)})
+
+
+@suites_bp.route("/api/test-cases/bulk-delete", methods=["POST"])
+def bulk_delete_test_cases():
+    """Delete multiple test cases if none of their runs are currently active."""
+    from app.routes.runner import _delete_run_record, _is_run_actively_running
+
+    data = request.json or {}
+    test_case_ids = data.get("test_case_ids") or []
+    if not test_case_ids or not isinstance(test_case_ids, list):
+        return jsonify({"error": "test_case_ids must be a non-empty list"}), 400
+
+    test_cases = TestCase.query.filter(TestCase.id.in_(test_case_ids)).all()
+    if not test_cases:
+        return jsonify({"error": "No valid test cases found"}), 404
+
+    for test_case in test_cases:
+        for run in list(test_case.test_runs):
+            if _is_run_actively_running(run):
+                return jsonify({
+                    "error": f"Cannot delete test case '{test_case.name or str(test_case.id)}' while one of its runs is still active"
+                }), 400
+
+    deleted_ids = []
+    for test_case in test_cases:
+        runs = list(test_case.test_runs)
+        for suite in list(test_case.suites):
+            suite.test_cases.remove(test_case)
+        for run in runs:
+            _delete_run_record(run)
+        deleted_ids.append(str(test_case.id))
+        db.session.delete(test_case)
+
+    db.session.commit()
+    return jsonify({
+        "status": "deleted",
+        "deleted_ids": deleted_ids,
+        "deleted_count": len(deleted_ids),
+        "requested_count": len(test_case_ids)
+    })

@@ -121,6 +121,7 @@
         <p id="modal-tc-name" class="text-sm text-gray-500 mb-6 truncate"></p>
 
         <input type="hidden" id="modal-tc-id">
+        <input type="hidden" id="modal-site-name">
         <div class="space-y-4">
             <div>
                 <label class="text-[10px] uppercase tracking-wider font-bold text-gray-500 block mb-1.5 ml-1">Test Case
@@ -412,6 +413,7 @@
                                 class="hidden absolute right-0 bottom-full mb-2 w-48 bg-surface-800 border border-white/10 rounded-xl shadow-2xl z-[120] overflow-hidden">
                                 <button data-tc-id="{{ run.test_case_id|string }}"
                                     data-tc-name="{{ run.test_case.name or run.test_case.situation_description[:60] if run.test_case else 'Unnamed Test' }}"
+                                    data-site-name="{{ run.site.name if run.site else '' }}"
                                     onclick="handleOpenModal(this)"
                                     class="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-brand-500 hover:text-white transition-colors flex items-center gap-2">
                                     <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"
@@ -966,6 +968,9 @@
                 alert(data.error || 'Bulk delete failed');
                 return;
             }
+            if (data.blocked_running && data.blocked_running.length) {
+                alert(`${data.message}\n\n${data.blocked_running.length} run(s) were still active and were skipped.`);
+            }
             location.reload();
         } catch (err) {
             alert('Bulk delete failed: ' + err.message);
@@ -981,10 +986,11 @@
     function handleOpenModal(btn) {
         const tcId = btn.getAttribute('data-tc-id');
         const tcName = btn.getAttribute('data-tc-name');
-        openAddToSuiteModal(tcId, tcName);
+        const siteName = btn.getAttribute('data-site-name') || '';
+        openAddToSuiteModal(tcId, tcName, siteName);
     }
 
-    function openAddToSuiteModal(tcId, tcName) {
+    function openAddToSuiteModal(tcId, tcName, siteName = '') {
         console.log("Attempting to open modal for:", tcId, tcName);
         const modal = document.getElementById('add-to-suite-modal');
         if (!modal) {
@@ -993,6 +999,7 @@
         }
 
         document.getElementById('modal-tc-id').value = tcId;
+        document.getElementById('modal-site-name').value = siteName;
         document.getElementById('modal-tc-name').innerText = tcName;
         document.getElementById('modal-tc-name-input').value = tcName;
         modal.classList.remove('hidden');
@@ -1007,6 +1014,7 @@
     async function confirmAddToSuite() {
         const tcId = document.getElementById('modal-tc-id').value;
         const tcName = document.getElementById('modal-tc-name-input').value.trim();
+        const siteName = document.getElementById('modal-site-name').value.trim();
         const suiteId = document.getElementById('modal-suite-id').value;
         const newSuiteName = document.getElementById('modal-new-suite-name').value.trim();
 
@@ -1019,7 +1027,8 @@
         const payload = {
             name: tcName,
             suite_id: suiteId || null,
-            new_suite_name: newSuiteName || null
+            new_suite_name: newSuiteName || null,
+            target_sites: siteName ? [siteName] : []
         };
 
 

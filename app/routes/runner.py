@@ -428,19 +428,21 @@ def api_delete_runs():
     runs = TestRun.query.filter(TestRun.id.in_(run_ids)).all()
     found_ids = {str(r.id): r for r in runs}
 
-    running = [rid for rid, r in found_ids.items() if _is_run_actively_running(r)]
-    if running:
-        return jsonify({
-            "error": "Cannot delete runs that are still active or started less than 2 hours ago",
-            "running": running,
-        }), 400
-
     deleted = []
+    blocked_running = []
     for rid, r in found_ids.items():
+        if _is_run_actively_running(r):
+            blocked_running.append(rid)
+            continue
         _delete_run_record(r)
         deleted.append(rid)
 
     db.session.commit()
 
     skipped = [rid for rid in run_ids if rid not in deleted]
-    return jsonify({"deleted": deleted, "skipped": skipped})
+    return jsonify({
+        "deleted": deleted,
+        "skipped": skipped,
+        "blocked_running": blocked_running,
+        "message": f"Deleted {len(deleted)} run(s). Skipped {len(skipped)}."
+    })
